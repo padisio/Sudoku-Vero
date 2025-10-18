@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Sudoku — PWA FINAL (v14)</title>
+  <title>VeruchiDoku</title>
   <meta name="theme-color" content="#0ea5e9">
   <style>
     :root{
@@ -134,7 +134,7 @@ select, button { max-width: 100%; min-width: 0; }
         <option value="hard">Difícil</option>
         <option value="expert">Experto</option>
       </select>
-      <button id="new" class="primary">Nueva</button>\n      <button id="installApp" class="primary" style="display:none">Instalar</button>
+      <button id="new" class="primary">Nueva</button> <button id="installApp" class="primary" style="display:none">Instalar</button>
       <button id="theme" class="iconbtn" aria-label="Cambiar tema">🌞</button>
     </div>
   </header>
@@ -409,21 +409,18 @@ startNew();
 </script>
 
 <script>
-// Early SW register (robust)
-(function(){
-  if (!('serviceWorker' in navigator)) { console.log('[SW] Not supported'); return; }
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('/service-worker.js', {scope:'/'})
-      .then(reg => console.log('[SW] Registered', reg.scope))
-      .catch(err => console.error('[SW] FAIL', err));
+// Register Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(() => console.log('[SW] registrado'))
+      .catch(err => console.error('[SW] error', err));
   });
-})();
-
-// Manual install button
+}
+// Manual install via beforeinstallprompt
 let deferredPrompt = null;
 const btnInstall = document.getElementById('installApp');
 window.addEventListener('beforeinstallprompt', (e) => {
-  console.log('[A2HS] beforeinstallprompt fired');
   e.preventDefault();
   deferredPrompt = e;
   if (btnInstall) btnInstall.style.display = 'inline-block';
@@ -431,7 +428,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 btnInstall?.addEventListener('click', async () => {
   if (!deferredPrompt) return;
   btnInstall.disabled = true;
-  try{
+  try {
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     console.log('[A2HS] outcome:', outcome);
