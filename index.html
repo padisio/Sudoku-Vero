@@ -507,50 +507,76 @@ window.clearSavedGame = function(){
 
 
 
+
+
+
 <script>
-// ===== Persistencia segura (sondeo ligero) =====
+// ===== Persistencia eficiente (solo en cambios reales) =====
 (function(){
   const SAVE_KEY = 'veruchidoku-save';
-  let last = null;
+  const DEBOUNCE_MS = 300;
+  let savePending = false;
+  let lastHash = null;
 
-  function snapshot(){
+  function boardHash(b){
     try{
-      if (!window.board) return null;
-      const payload = {
-        board: window.board,
-        notes: window.notes,
-        pencil: !!window.pencil,
-        elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
-      };
-      return JSON.stringify(payload);
-    }catch(_){ return null; }
+      let s = '';
+      for (let r=0;r<9;r++){
+        const row = b[r] || [];
+        for (let c=0;c<9;c++) s += (row[c]||0);
+      }
+      return s;
+    }catch(_){ return ''; }
   }
 
-  function trySave(){
-    const s = snapshot();
-    if (!s || s === last) return;
-    try{
-      localStorage.setItem(SAVE_KEY, s);
-      last = s;
-    }catch(err){
-      console.warn('[VeruchiDoku] save error:', err);
+  function makeSnapshot(){
+    const b = (window.board || []);
+    return {
+      bh: boardHash(b),
+      board: b,
+      notes: window.notes || null,
+      pencil: !!window.pencil,
+      elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
+    };
+  }
+
+  function scheduleSave(){
+    if (savePending) return;
+    savePending = true;
+    const run = () => {
+      savePending = false;
+      try {
+        const snap = makeSnapshot();
+        const h = snap.bh + '|' + (snap.pencil?1:0) + '|' + snap.elapsed;
+        if (h !== lastHash){
+          localStorage.setItem(SAVE_KEY, JSON.stringify(snap));
+          lastHash = h;
+        }
+      } catch (err) {
+        console.warn('[VeruchiDoku] save error:', err);
+      }
+    };
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(run, {timeout: 600});
+    } else {
+      setTimeout(run, DEBOUNCE_MS);
     }
   }
 
-  function restore(){
+  function restoreOnce(){
     const raw = localStorage.getItem(SAVE_KEY);
-    if(!raw) return false;
+    if (!raw) return false;
     try{
-      const data = JSON.parse(raw);
-      if(!data || !data.board) return false;
-      window.board = data.board;
-      window.notes = data.notes || Array(SIZE).fill().map(()=>Array(SIZE).fill([]));
-      window.pencil = !!data.pencil;
-      if (typeof window.seconds !== 'undefined') window.seconds = data.elapsed || 0;
+      const snap = JSON.parse(raw);
+      if (!snap || !snap.board) return false;
+      window.board = snap.board;
+      if (snap.notes) window.notes = snap.notes;
+      window.pencil = !!snap.pencil;
+      if (typeof window.seconds !== 'undefined') window.seconds = snap.elapsed || 0;
       if (typeof window.render === 'function') window.render();
       if (typeof window.renderPad === 'function') window.renderPad();
-      last = raw;
-      console.log('[VeruchiDoku] restored');
+      lastHash = (snap.bh || '') + '|' + (snap.pencil?1:0) + '|' + (snap.elapsed||0);
+      console.log('[VeruchiDoku] Partida restaurada');
       return true;
     }catch(err){
       console.warn('[VeruchiDoku] restore error:', err);
@@ -558,16 +584,34 @@ window.clearSavedGame = function(){
     }
   }
 
-  window.clearSavedGame = function(){ localStorage.removeItem(SAVE_KEY); };
+  function hookSaves(){
+    if (typeof window.inputNumber === 'function'){
+      const _inputNumber = window.inputNumber;
+      window.inputNumber = function(n){
+        const r = _inputNumber.apply(this, arguments);
+        requestAnimationFrame(scheduleSave);
+        return r;
+      };
+    }
+    if (typeof window.newGame === 'function'){
+      const _newGame = window.newGame;
+      window.newGame = function(){
+        const r = _newGame.apply(this, arguments);
+        requestAnimationFrame(scheduleSave);
+        return r;
+      };
+    }
+  }
 
   window.addEventListener('load', () => {
-    const ok = restore();
-    if (!ok && typeof window.newGame === 'function'){
+    const restored = restoreOnce();
+    if (!restored && typeof window.newGame === 'function'){
       try { window.newGame('media'); } catch(_) {}
     }
-    // Sondeo liviano cada 1s
-    setInterval(trySave, 1000);
+    hookSaves();
   });
+
+  window.clearSavedGame = function(){ localStorage.removeItem(SAVE_KEY); };
 })();
 </script>
 
