@@ -128,6 +128,7 @@ select, button { max-width: 100%; min-width: 0; }
   <meta name="theme-color" content="#0ea5e9">
 </head>
 <body>
+  <script defer src=\"/sw-register.js\"></script>
   <header>
     <h1>Sudoku</h1>
     <div class="row">
@@ -409,14 +410,6 @@ function launchConfetti(){
 
 // Inicializa
 startNew();
-</script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch(console.error);
-  });
-}
 </script>
 </body>
 </html>
