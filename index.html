@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Sudoku PWA v14 — instalable</title>
+  <title>Sudoku — v14 + botón Instalar</title>
   <meta name="theme-color" content="#0ea5e9">
   <style>
     :root{
@@ -138,6 +138,7 @@ select, button { max-width: 100%; min-width: 0; }
         <option value="expert">Experto</option>
       </select>
       <button id="new" class="primary">Nueva</button>
+      <button id="installApp" class="primary" style="display:none">Instalar</button>
       <button id="theme" class="iconbtn" aria-label="Cambiar tema">🌞</button>
     </div>
   </header>
@@ -420,5 +421,32 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+
+<script>
+// PWA manual install button via beforeinstallprompt
+let deferredPrompt = null;
+const btnInstall = document.getElementById('installApp');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (btnInstall) btnInstall.style.display = 'inline-block';
+});
+
+btnInstall?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  btnInstall.disabled = true;
+  try{
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log('[A2HS] outcome:', outcome);
+  } finally {
+    deferredPrompt = null;
+    btnInstall.style.display = 'none';
+    btnInstall.disabled = false;
+  }
+});
+</script>
+
 </body>
 </html>
