@@ -513,142 +513,81 @@ window.clearSavedGame = function(){
 
 
 
+
+
 <script>
-// ===== Persistencia por DIFF (no toca dados) =====
-(function(){
+// ===== VeruchiDoku — Boot Gate + Persistencia por DIFF (no toca dados) =====
+(function () {
   const SAVE_KEY = 'veruchidoku-save-v2';
-  let VDK = { givensMask: null, puzzleSig: null, restored: false };
+  const DEF_LEVEL = 'media';
+  let booting = true, queuedNewGameArgs = null, restored = false;
+  let VDK = { givensMask: null, puzzleSig: null };
 
   function makeMaskFromBoard(b){
-    const m = Array(9).fill(null).map(()=>Array(9).fill(false));
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++) m[r][c] = !!(b[r] && b[r][c]);
+    const m = Array(9).fill().map(()=>Array(9).fill(false));
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++)m[r][c]=!!(b[r]&&b[r][c]);
     return m;
   }
   function puzzleSignature(b, mask){
-    let s = '';
-    for (let r=0;r<9;r++){
-      for (let c=0;c<9;c++) s += mask[r][c] ? (b[r][c]||0) : '.';
-    }
-    return s;
+    let s='';for(let r=0;r<9;r++)for(let c=0;c<9;c++)s+=mask[r][c]?(b[r][c]||0):'.';return s;
   }
-  function extractMoves(b, mask){
-    const moves = [];
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
-      if (!mask[r][c]){
-        const v = (b[r] && b[r][c]) || 0;
-        if (v) moves.push([r,c,v]);
-      }
-    }
-    return moves;
-  }
-  function extractNotes(notes, mask){
-    if (!notes) return null;
-    const out = [];
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
-      if (!mask[r][c]){
-        const n = notes[r] && notes[r][c];
-        if (n && n.length) out.push([r,c,[...n]]);
-      }
-    }
-    return out.length ? out : null;
-  }
-  function applyMoves(moves, mask){
-    if (!Array.isArray(moves)) return;
-    for (const [r,c,v] of moves){
-      if (!mask[r][c] && window.board && window.board[r]) window.board[r][c] = v;
-    }
-  }
-  function applyNotes(notesArr, mask){
-    if (!Array.isArray(notesArr) || !window.notes) return;
-    for (const [r,c,vals] of notesArr){
-      if (!mask[r][c] && window.notes[r]) window.notes[r][c] = Array.isArray(vals) ? vals.slice(0) : [];
-    }
-  }
+  function extractMoves(b,mask){const m=[];for(let r=0;r<9;r++)for(let c=0;c<9;c++){if(!mask[r][c]){const v=(b[r]&&b[r][c])||0;if(v)m.push([r,c,v]);}}return m;}
+  function extractNotes(notes,mask){if(!notes)return null;const out=[];for(let r=0;r<9;r++)for(let c=0;c<9;c++){if(!mask[r][c]){const n=notes[r]&&notes[r][c];if(n&&n.length)out.push([r,c,[...n]]);}}return out.length?out:null;}
+  function applyMoves(m,mask){if(!Array.isArray(m))return;for(const [r,c,v]of m){if(!mask[r][c]&&window.board?.[r])window.board[r][c]=v;}}
+  function applyNotes(nA,mask){if(!Array.isArray(nA)||!window.notes)return;for(const[r,c,vals]of nA){if(!mask[r][c]&&window.notes[r])window.notes[r][c]=Array.isArray(vals)?vals.slice(0):[];}}
 
   function saveDiff(){
     try{
-      if (!window.board) return;
-      if (!VDK.givensMask){
-        VDK.givensMask = makeMaskFromBoard(window.board);
-        VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
-      }
-      const payload = {
-        puzzleSig: VDK.puzzleSig,
-        moves: extractMoves(window.board, VDK.givensMask),
-        notes: extractNotes(window.notes, VDK.givensMask),
-        pencil: !!window.pencil,
-        elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
-      };
-      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
-    }catch(err){ console.warn('[VeruchiDoku] saveDiff error:', err); }
+      if(!window.board)return;
+      if(!VDK.givensMask){VDK.givensMask=makeMaskFromBoard(window.board);VDK.puzzleSig=puzzleSignature(window.board,VDK.givensMask);}
+      const data={puzzleSig:VDK.puzzleSig,moves:extractMoves(window.board,VDK.givensMask),notes:extractNotes(window.notes,VDK.givensMask),pencil:!!window.pencil,elapsed:(typeof window.seconds!=='undefined')?window.seconds:0};
+      localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+    }catch(e){console.warn('[VDK] saveDiff error',e);}
   }
-
   function restoreDiff(){
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
+    const raw=localStorage.getItem(SAVE_KEY);if(!raw)return false;
     try{
-      const data = JSON.parse(raw);
-      if (!data || !data.puzzleSig) return false;
-      if (!window.board) return false;
-      VDK.givensMask = makeMaskFromBoard(window.board);
-      const currentSig = puzzleSignature(window.board, VDK.givensMask);
-      if (currentSig !== data.puzzleSig){
-        console.log('[VeruchiDoku] Guardado pertenece a otro puzzle. Se ignora.');
-        return false;
-      }
-      applyMoves(data.moves, VDK.givensMask);
-      applyNotes(data.notes, VDK.givensMask);
-      if (typeof window.seconds !== 'undefined') window.seconds = data.elapsed || 0;
-      window.pencil = !!data.pencil;
-      if (typeof window.render === 'function') window.render();
-      if (typeof window.renderPad === 'function') window.renderPad();
-      VDK.puzzleSig = data.puzzleSig;
-      VDK.restored = true;
-      console.log('[VeruchiDoku] Partida restaurada por diff.');
-      return true;
-    }catch(err){ console.warn('[VeruchiDoku] restoreDiff error:', err); return false; }
+      const d=JSON.parse(raw);if(!d?.puzzleSig||!window.board)return false;
+      VDK.givensMask=makeMaskFromBoard(window.board);
+      const sig=puzzleSignature(window.board,VDK.givensMask);
+      if(sig!==d.puzzleSig){console.log('[VDK] Guardado otro puzzle.');return false;}
+      applyMoves(d.moves,VDK.givensMask);applyNotes(d.notes,VDK.givensMask);
+      if(typeof window.seconds!=='undefined')window.seconds=d.elapsed||0;window.pencil=!!d.pencil;
+      if(typeof window.render==='function')window.render();if(typeof window.renderPad==='function')window.renderPad();
+      restored=true;console.log('[VDK] restaurado');return true;
+    }catch(e){console.warn('[VDK] restore error',e);return false;}
   }
 
+  let _newGame=null;
+  function wrapNewGameOnce(){
+    if(typeof window.newGame!=='function'||_newGame)return;
+    _newGame=window.newGame;
+    window.newGame=function(...args){
+      if(booting){queuedNewGameArgs=args.length?args:null;return;}
+      return _newGame.apply(this,args);
+    };
+  }
   function hookSaves(){
-    if (typeof window.inputNumber === 'function'){
-      const _inputNumber = window.inputNumber;
-      window.inputNumber = function(n){
-        const r = _inputNumber.apply(this, arguments);
-        if ('requestIdleCallback' in window) requestIdleCallback(saveDiff, {timeout:500});
-        else setTimeout(saveDiff, 200);
-        return r;
-      };
+    if(typeof window.inputNumber==='function'){
+      const orig=window.inputNumber;
+      window.inputNumber=function(n){const r=orig.apply(this,arguments);setTimeout(saveDiff,200);return r;};
     }
-    if (typeof window.newGame === 'function'){
-      const _newGame = window.newGame;
-      window.newGame = function(){
-        const r = _newGame.apply(this, arguments);
-        try{
-          VDK.givensMask = makeMaskFromBoard(window.board);
-          VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
-          restoreDiff();
-        }catch(_){}
-        if ('requestIdleCallback' in window) requestIdleCallback(saveDiff, {timeout:500});
-        else setTimeout(saveDiff, 200);
-        return r;
-      };
+    if(_newGame){
+      const o=_newGame;
+      _newGame=function(...a){const r=o.apply(this,a);setTimeout(saveDiff,200);return r;};
+      window.newGame=_newGame;
     }
   }
-
-  window.addEventListener('load', () => {
-    try{
-      if (window.board){
-        VDK.givensMask = makeMaskFromBoard(window.board);
-        VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
-        restoreDiff();
-      }
-    }catch(_){}
+  window.addEventListener('load',()=>{
+    wrapNewGameOnce();
+    try{if(window.board){VDK.givensMask=makeMaskFromBoard(window.board);VDK.puzzleSig=puzzleSignature(window.board,VDK.givensMask);}}catch(e){}
+    const ok=restoreDiff();
+    booting=false;
+    if(!ok&&_newGame){if(queuedNewGameArgs)_newGame.apply(window,queuedNewGameArgs);else _newGame(DEF_LEVEL);}
     hookSaves();
   });
-
-  window.clearSavedGame = function(){ localStorage.removeItem(SAVE_KEY); };
+  window.clearSavedGame=function(){localStorage.removeItem(SAVE_KEY);};
 })();
 </script>
-
 </body>
 </html>
