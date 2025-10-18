@@ -510,78 +510,103 @@ window.clearSavedGame = function(){
 
 
 
+
+
+
 <script>
-// ===== Persistencia eficiente (solo en cambios reales) =====
+// ===== Persistencia por DIFF (no toca dados) =====
 (function(){
-  const SAVE_KEY = 'veruchidoku-save';
-  const DEBOUNCE_MS = 300;
-  let savePending = false;
-  let lastHash = null;
+  const SAVE_KEY = 'veruchidoku-save-v2';
+  let VDK = { givensMask: null, puzzleSig: null, restored: false };
 
-  function boardHash(b){
-    try{
-      let s = '';
-      for (let r=0;r<9;r++){
-        const row = b[r] || [];
-        for (let c=0;c<9;c++) s += (row[c]||0);
-      }
-      return s;
-    }catch(_){ return ''; }
+  function makeMaskFromBoard(b){
+    const m = Array(9).fill(null).map(()=>Array(9).fill(false));
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) m[r][c] = !!(b[r] && b[r][c]);
+    return m;
   }
-
-  function makeSnapshot(){
-    const b = (window.board || []);
-    return {
-      bh: boardHash(b),
-      board: b,
-      notes: window.notes || null,
-      pencil: !!window.pencil,
-      elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
-    };
+  function puzzleSignature(b, mask){
+    let s = '';
+    for (let r=0;r<9;r++){
+      for (let c=0;c<9;c++) s += mask[r][c] ? (b[r][c]||0) : '.';
+    }
+    return s;
   }
-
-  function scheduleSave(){
-    if (savePending) return;
-    savePending = true;
-    const run = () => {
-      savePending = false;
-      try {
-        const snap = makeSnapshot();
-        const h = snap.bh + '|' + (snap.pencil?1:0) + '|' + snap.elapsed;
-        if (h !== lastHash){
-          localStorage.setItem(SAVE_KEY, JSON.stringify(snap));
-          lastHash = h;
-        }
-      } catch (err) {
-        console.warn('[VeruchiDoku] save error:', err);
+  function extractMoves(b, mask){
+    const moves = [];
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
+      if (!mask[r][c]){
+        const v = (b[r] && b[r][c]) || 0;
+        if (v) moves.push([r,c,v]);
       }
-    };
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(run, {timeout: 600});
-    } else {
-      setTimeout(run, DEBOUNCE_MS);
+    }
+    return moves;
+  }
+  function extractNotes(notes, mask){
+    if (!notes) return null;
+    const out = [];
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
+      if (!mask[r][c]){
+        const n = notes[r] && notes[r][c];
+        if (n && n.length) out.push([r,c,[...n]]);
+      }
+    }
+    return out.length ? out : null;
+  }
+  function applyMoves(moves, mask){
+    if (!Array.isArray(moves)) return;
+    for (const [r,c,v] of moves){
+      if (!mask[r][c] && window.board && window.board[r]) window.board[r][c] = v;
+    }
+  }
+  function applyNotes(notesArr, mask){
+    if (!Array.isArray(notesArr) || !window.notes) return;
+    for (const [r,c,vals] of notesArr){
+      if (!mask[r][c] && window.notes[r]) window.notes[r][c] = Array.isArray(vals) ? vals.slice(0) : [];
     }
   }
 
-  function restoreOnce(){
+  function saveDiff(){
+    try{
+      if (!window.board) return;
+      if (!VDK.givensMask){
+        VDK.givensMask = makeMaskFromBoard(window.board);
+        VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
+      }
+      const payload = {
+        puzzleSig: VDK.puzzleSig,
+        moves: extractMoves(window.board, VDK.givensMask),
+        notes: extractNotes(window.notes, VDK.givensMask),
+        pencil: !!window.pencil,
+        elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    }catch(err){ console.warn('[VeruchiDoku] saveDiff error:', err); }
+  }
+
+  function restoreDiff(){
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return false;
     try{
-      const snap = JSON.parse(raw);
-      if (!snap || !snap.board) return false;
-      window.board = snap.board;
-      if (snap.notes) window.notes = snap.notes;
-      window.pencil = !!snap.pencil;
-      if (typeof window.seconds !== 'undefined') window.seconds = snap.elapsed || 0;
+      const data = JSON.parse(raw);
+      if (!data || !data.puzzleSig) return false;
+      if (!window.board) return false;
+      VDK.givensMask = makeMaskFromBoard(window.board);
+      const currentSig = puzzleSignature(window.board, VDK.givensMask);
+      if (currentSig !== data.puzzleSig){
+        console.log('[VeruchiDoku] Guardado pertenece a otro puzzle. Se ignora.');
+        return false;
+      }
+      applyMoves(data.moves, VDK.givensMask);
+      applyNotes(data.notes, VDK.givensMask);
+      if (typeof window.seconds !== 'undefined') window.seconds = data.elapsed || 0;
+      window.pencil = !!data.pencil;
       if (typeof window.render === 'function') window.render();
       if (typeof window.renderPad === 'function') window.renderPad();
-      lastHash = (snap.bh || '') + '|' + (snap.pencil?1:0) + '|' + (snap.elapsed||0);
-      console.log('[VeruchiDoku] Partida restaurada');
+      VDK.puzzleSig = data.puzzleSig;
+      VDK.restored = true;
+      console.log('[VeruchiDoku] Partida restaurada por diff.');
       return true;
-    }catch(err){
-      console.warn('[VeruchiDoku] restore error:', err);
-      return false;
-    }
+    }catch(err){ console.warn('[VeruchiDoku] restoreDiff error:', err); return false; }
   }
 
   function hookSaves(){
@@ -589,7 +614,8 @@ window.clearSavedGame = function(){
       const _inputNumber = window.inputNumber;
       window.inputNumber = function(n){
         const r = _inputNumber.apply(this, arguments);
-        requestAnimationFrame(scheduleSave);
+        if ('requestIdleCallback' in window) requestIdleCallback(saveDiff, {timeout:500});
+        else setTimeout(saveDiff, 200);
         return r;
       };
     }
@@ -597,17 +623,26 @@ window.clearSavedGame = function(){
       const _newGame = window.newGame;
       window.newGame = function(){
         const r = _newGame.apply(this, arguments);
-        requestAnimationFrame(scheduleSave);
+        try{
+          VDK.givensMask = makeMaskFromBoard(window.board);
+          VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
+          restoreDiff();
+        }catch(_){}
+        if ('requestIdleCallback' in window) requestIdleCallback(saveDiff, {timeout:500});
+        else setTimeout(saveDiff, 200);
         return r;
       };
     }
   }
 
   window.addEventListener('load', () => {
-    const restored = restoreOnce();
-    if (!restored && typeof window.newGame === 'function'){
-      try { window.newGame('media'); } catch(_) {}
-    }
+    try{
+      if (window.board){
+        VDK.givensMask = makeMaskFromBoard(window.board);
+        VDK.puzzleSig = puzzleSignature(window.board, VDK.givensMask);
+        restoreDiff();
+      }
+    }catch(_){}
     hookSaves();
   });
 
