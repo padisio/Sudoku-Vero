@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Sudoku — v14 + botón Instalar</title>
+  <title>Sudoku — PWA FINAL (v14)</title>
   <meta name="theme-color" content="#0ea5e9">
   <style>
     :root{
@@ -122,9 +122,6 @@ select, button { max-width: 100%; min-width: 0; }
 </style>
 
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
   <meta name="theme-color" content="#0ea5e9">
 </head>
 <body>
@@ -137,8 +134,7 @@ select, button { max-width: 100%; min-width: 0; }
         <option value="hard">Difícil</option>
         <option value="expert">Experto</option>
       </select>
-      <button id="new" class="primary">Nueva</button>
-      <button id="installApp" class="primary" style="display:none">Instalar</button>
+      <button id="new" class="primary">Nueva</button>\n      <button id="installApp" class="primary" style="display:none">Instalar</button>
       <button id="theme" class="iconbtn" aria-label="Cambiar tema">🌞</button>
     </div>
   </header>
@@ -413,26 +409,25 @@ startNew();
 </script>
 
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
-      .then(() => console.log('SW registrado'))
-      .catch(err => console.log('SW error', err));
+// Early SW register (robust)
+(function(){
+  if (!('serviceWorker' in navigator)) { console.log('[SW] Not supported'); return; }
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/service-worker.js', {scope:'/'})
+      .then(reg => console.log('[SW] Registered', reg.scope))
+      .catch(err => console.error('[SW] FAIL', err));
   });
-}
-</script>
+})();
 
-<script>
-// PWA manual install button via beforeinstallprompt
+// Manual install button
 let deferredPrompt = null;
 const btnInstall = document.getElementById('installApp');
-
 window.addEventListener('beforeinstallprompt', (e) => {
+  console.log('[A2HS] beforeinstallprompt fired');
   e.preventDefault();
   deferredPrompt = e;
   if (btnInstall) btnInstall.style.display = 'inline-block';
 });
-
 btnInstall?.addEventListener('click', async () => {
   if (!deferredPrompt) return;
   btnInstall.disabled = true;
