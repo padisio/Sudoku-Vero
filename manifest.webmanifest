@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Sudoku WOW",
-  "short_name": "Sudoku",
+  "name": "VeruchiDoku",
+  "short_name": "VeruchiDoku",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

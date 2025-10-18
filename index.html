@@ -409,7 +409,7 @@ startNew();
 </script>
 
 <script>
-// Register Service Worker
+// ===== Service Worker Register =====
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
@@ -417,7 +417,8 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.error('[SW] error', err));
   });
 }
-// Manual install via beforeinstallprompt
+
+// ===== Manual "Instalar" Button =====
 let deferredPrompt = null;
 const btnInstall = document.getElementById('installApp');
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -438,6 +439,68 @@ btnInstall?.addEventListener('click', async () => {
     btnInstall.disabled = false;
   }
 });
+
+// ===== Persistencia de partida (localStorage) =====
+function saveGame() {
+  try {
+    const data = {
+      board,
+      solution,
+      notes,
+      pencil,
+      elapsed: (typeof seconds !== 'undefined') ? seconds : 0
+    };
+    localStorage.setItem('veruchidoku-save', JSON.stringify(data));
+  } catch (err) {
+    console.warn('[VeruchiDoku] No se pudo guardar la partida:', err);
+  }
+}
+
+function restoreGame() {
+  const saved = localStorage.getItem('veruchidoku-save');
+  if (!saved) return false;
+  try {
+    const data = JSON.parse(saved);
+    if (!data || !data.board) return false;
+    // Restaurar estructuras
+    board = data.board;
+    solution = data.solution;
+    notes = data.notes || Array(SIZE).fill().map(()=>Array(SIZE).fill([]));
+    pencil = !!data.pencil;
+    if (typeof seconds !== 'undefined') { seconds = data.elapsed || 0; }
+    // Re-dibujar UI
+    if (typeof render === 'function') render();
+    if (typeof renderPad === 'function') renderPad();
+    console.log('[VeruchiDoku] Partida restaurada');
+    return true;
+  } catch (err) {
+    console.warn('[VeruchiDoku] Error al restaurar partida:', err);
+    return false;
+  }
+}
+
+// Guardado automático en interacciones típicas
+document.addEventListener('click', (e) => {
+  if (e.target.matches('.pad button, .grid .cell, button, .iconbtn')) {
+    setTimeout(saveGame, 0); // tras aplicar cambios
+  }
+});
+document.addEventListener('input', () => setTimeout(saveGame, 0));
+
+// Restaurar al iniciar (o crear nueva si no hay partida)
+window.addEventListener('load', () => {
+  const restored = restoreGame();
+  if (!restored && typeof newGame === 'function') {
+    console.log('[VeruchiDoku] Nueva partida');
+    try { newGame('media'); } catch(e) { /* ignora si no existe */ }
+  }
+});
+
+// Opción: Exponer función para reiniciar partida manualmente
+window.clearSavedGame = function(){
+  localStorage.removeItem('veruchidoku-save');
+  if (typeof newGame === 'function') newGame('media');
+};
 </script>
 
 </body>
