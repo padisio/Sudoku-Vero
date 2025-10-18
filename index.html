@@ -504,97 +504,69 @@ window.clearSavedGame = function(){
 </script>
 
 
+
+
+
 <script>
-// ===== Persistencia optimizada (debounced) =====
+// ===== Persistencia segura (sondeo ligero) =====
 (function(){
   const SAVE_KEY = 'veruchidoku-save';
-  let saveTimer = null;
-  const debounceMs = 250;
-  const canIdle = typeof window.requestIdleCallback === 'function';
+  let last = null;
 
-  function scheduleSave(){
-    if (saveTimer) return;
-    const run = () => { saveTimer = null; commitSave(); };
-    saveTimer = canIdle
-      ? requestIdleCallback(run, {timeout: 500})
-      : setTimeout(run, debounceMs);
+  function snapshot(){
+    try{
+      if (!window.board) return null;
+      const payload = {
+        board: window.board,
+        notes: window.notes,
+        pencil: !!window.pencil,
+        elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
+      };
+      return JSON.stringify(payload);
+    }catch(_){ return null; }
   }
 
-  function commitSave(){
+  function trySave(){
+    const s = snapshot();
+    if (!s || s === last) return;
     try{
-      // Guardamos solo lo necesario
-      const data = {
-        board,
-        notes,
-        pencil,
-        elapsed: (typeof seconds !== 'undefined') ? seconds : 0
-      };
-      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      localStorage.setItem(SAVE_KEY, s);
+      last = s;
     }catch(err){
       console.warn('[VeruchiDoku] save error:', err);
     }
   }
 
-  window.restoreGame = function(){
+  function restore(){
     const raw = localStorage.getItem(SAVE_KEY);
     if(!raw) return false;
     try{
       const data = JSON.parse(raw);
       if(!data || !data.board) return false;
-      board = data.board;
-      notes = data.notes || Array(SIZE).fill().map(()=>Array(SIZE).fill([]));
-      pencil = !!data.pencil;
-      if (typeof seconds !== 'undefined') seconds = data.elapsed || 0;
-      if (typeof render === 'function') render();
-      if (typeof renderPad === 'function') renderPad();
+      window.board = data.board;
+      window.notes = data.notes || Array(SIZE).fill().map(()=>Array(SIZE).fill([]));
+      window.pencil = !!data.pencil;
+      if (typeof window.seconds !== 'undefined') window.seconds = data.elapsed || 0;
+      if (typeof window.render === 'function') window.render();
+      if (typeof window.renderPad === 'function') window.renderPad();
+      last = raw;
       console.log('[VeruchiDoku] restored');
       return true;
     }catch(err){
       console.warn('[VeruchiDoku] restore error:', err);
       return false;
     }
-  };
+  }
 
-  window.clearSavedGame = function(){
-    localStorage.removeItem(SAVE_KEY);
-  };
+  window.clearSavedGame = function(){ localStorage.removeItem(SAVE_KEY); };
 
-  // Hook a funciones clave si existen, para guardar tras cambios reales
   window.addEventListener('load', () => {
-    // Monkey-patch inputNumber y newGame si están
-    if (typeof window.inputNumber === 'function'){
-      const _inputNumber = window.inputNumber;
-      window.inputNumber = function(n){
-        const r = _inputNumber.apply(this, arguments);
-        scheduleSave();
-        return r;
-      };
-    }
-    if (typeof window.newGame === 'function'){
-      const _newGame = window.newGame;
-      window.newGame = function(){
-        const r = _newGame.apply(this, arguments);
-        scheduleSave();
-        return r;
-      };
-    }
-
-    // Eventos ligeros y 'passive' para capturar interacciones típicas sin bloquear UI
-    document.addEventListener('click', (e)=>{
-      if (e.target.closest('.pad button') || e.target.closest('.grid .cell')) {
-        scheduleSave();
-      }
-      // El botón de notas se crea dinámicamente: detecta por su texto
-      if (e.target.matches('button') && /Notas/i.test(e.target.textContent || '')) {
-        scheduleSave();
-      }
-    }, {passive:true});
-
-    // Restaurar al iniciar
-    const ok = window.restoreGame();
+    const ok = restore();
     if (!ok && typeof window.newGame === 'function'){
       try { window.newGame('media'); } catch(_) {}
     }
+    // Sondeo liviano cada 1s
+    setInterval(trySave, 1000);
   });
 })();
 </script>
