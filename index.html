@@ -134,7 +134,7 @@ select, button { max-width: 100%; min-width: 0; }
         <option value="hard">Difícil</option>
         <option value="expert">Experto</option>
       </select>
-      <button id="new" class="primary">Nueva</button> <button id="installApp" class="primary" style="display:none">Instalar</button>
+      <button id="new" class="primary">Nueva</button>
       <button id="theme" class="iconbtn" aria-label="Cambiar tema">🌞</button>
     </div>
   </header>
@@ -169,153 +169,360 @@ select, button { max-width: 100%; min-width: 0; }
 
   <footer>Separadores 3×3 exactos (entre 3/4 y 6/7) • Líneas internas suaves • Celdas cuadradas.</footer>
 
+<script>
+// ===== Tema claro/oscuro (por defecto CLARO) con icono ☀️/🌙 =====
+(function(){
+  var btn = document.getElementById('theme');
+  var root = document.body;
+  var key = 'sudoku-theme-v8';
+  var saved = localStorage.getItem(key) || 'light';
+  function apply(mode){
+    if(mode==='dark'){ root.classList.add('dark'); btn.textContent='🌙'; }
+    else { root.classList.remove('dark'); btn.textContent='🌞'; }
+    localStorage.setItem(key, mode);
+  }
+  btn.addEventListener('click', function(){
+    var next = root.classList.contains('dark') ? 'light' : 'dark';
+    apply(next);
+  });
+  apply(saved);
+})();
 
+// ===== Utilidades Sudoku =====
+var SIZE=9, BOX=3;
+function clone(b){return b.map(function(r){return r.slice();});}
+function empty(){var r=[]; for(var i=0;i<SIZE;i++){ r.push(new Array(SIZE).fill(0)); } return r;}
+function shuffle(arr){var a=arr.slice(); for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t;} return a;}
+function isSafe(board,r,c,n){
+  for(var i=0;i<SIZE;i++){ if(board[r][i]===n||board[i][c]===n) return false; }
+  var br=Math.floor(r/BOX)*BOX, bc=Math.floor(c/BOX)*BOX;
+  for(var i=0;i<BOX;i++) for(var j=0;j<BOX;j++){ if(board[br+i][bc+j]===n) return false; }
+  return true;
+}
+function findEmpty(board){ for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]===0) return [r,c]; return null;}
+function solveBoard(board,count,cap){ if(count===void 0) count=false; if(cap===void 0) cap=2;
+  var b=clone(board), solutions=0;
+  function bt(){ var spot=findEmpty(b); if(!spot){solutions++; return true;}
+    var r=spot[0], c=spot[1];
+    var nums=shuffle([1,2,3,4,5,6,7,8,9]);
+    for(var k=0;k<nums.length;k++){var n=nums[k];
+      if(isSafe(b,r,c,n)){ b[r][c]=n; var res=bt(); if(!count&&res) return true; if(count&&solutions>=cap) return true; b[r][c]=0; }
+    } return false;
+  }
+  var ok=bt(); return {ok:ok,board:b,solutions:solutions};
+}
+function generateFull(){ var b=empty();
+  (function bt(){ var s=findEmpty(b); if(!s) return true;
+    var r=s[0], c=s[1];
+    var nums=shuffle([1,2,3,4,5,6,7,8,9]);
+    for(var k=0;k<nums.length;k++){var n=nums[k]; if(isSafe(b,r,c,n)){ b[r][c]=n; if(bt()) return true; b[r][c]=0; } }
+    return false;
+  })(); return b;
+}
+function countSolutions(board){ return solveBoard(board,true,2).solutions; }
+function makePuzzle(difficulty){
+  var table={easy:[40,46],medium:[33,39],hard:[26,32],expert:[22,25]};
+  var mm=table[difficulty]||[33,39]; var minC=mm[0], maxC=mm[1];
+  var solution=generateFull(); var puzzle=clone(solution);
+  var positions=shuffle(Array.from({length:81},(_,i)=>i));
+  var target=Math.floor(minC+Math.random()*(maxC-minC+1));
+  var removed=0;
+  for(var p=0;p<positions.length;p++){ var pos=positions[p], r=Math.floor(pos/9), c=pos%9;
+    var bk=puzzle[r][c]; if(bk===0) continue; puzzle[r][c]=0;
+    var sols=countSolutions(puzzle);
+    if(sols!==1){ puzzle[r][c]=bk; } else { removed++; var clues=81-removed; if(clues<=target) break; }
+  }
+  return {puzzle:puzzle,solution:solution};
+}
 
+// ===== Estado y UI =====
+var gridEl=document.getElementById('grid');
+var padEl=document.getElementById('numpad');
+var timeEl=document.getElementById('time');
+var counterEl=document.getElementById('counter');
+var diffEl=document.getElementById('difficulty');
+var btnNew=document.getElementById('new');
+var btnPencil=document.getElementById('pencil');
+var btnCheck=document.getElementById('check');
+var btnHint=document.getElementById('hint');
+var winEl=document.getElementById('win');
+var winTimeEl=document.getElementById('winTime');
+var playAgain=document.getElementById('playAgain');
+var confettiEl=document.getElementById('confetti');
 
+var given=empty(), board=empty(), solution=empty();
+var notes=Array.from({length:SIZE},function(){return Array.from({length:SIZE},function(){return new Set();});});
+var selected=[0,0]; var pencil=false; var timer=0, timerId=null;
 
+function ensureCells(){
+  if(gridEl.children.length===81) return;
+  for(var i=0;i<81;i++){
+    var d=document.createElement('div'); d.className='cell';
+    var r=Math.floor(i/9), c=i%9;
+    // mark edges for outer thin border completion
+    if(r===0) d.classList.add('edge-top');
+    if(c===0) d.classList.add('edge-left');
+    if(r===8) d.classList.add('edge-bottom');
+    if(c===8) d.classList.add('edge-right');
+    // strong 3x3 separators after row 3 & 6, col 3 & 6
+    if(c===2 || c===5) d.classList.add('sepR');
+    if(r===2 || r===5) d.classList.add('sepB');
+    gridEl.appendChild(d);
+  }
+}
 
+function startNew(){
+  var data=makePuzzle(diffEl.value); given=data.puzzle; board=clone(data.puzzle); solution=data.solution;
+  notes=Array.from({length:SIZE},function(){return Array.from({length:SIZE},function(){return new Set();});});
+  selected=[0,0]; timer=0; if(timerId) clearInterval(timerId);
+  timerId=setInterval(function(){timer++; renderTime();},1000);
+  winEl.style.display='none'; confettiEl.innerHTML='';
+  renderAll();
+}
+function renderTime(){ var m=('0'+Math.floor(timer/60)).slice(-2); var s=('0'+(timer%60)).slice(-2); timeEl.textContent=m+':'+s; }
+function renderGrid(){
+  ensureCells();
+  var cells=[].slice.call(gridEl.children);
+  var currentValue = board[selected[0]][selected[1]] || 0;
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+    var idx=r*9+c, cell=cells[idx];
+    cell.classList.remove('sel','rc','same','wrong','given');
+    var v=board[r][c];
+    if(given[r][c]!==0) cell.classList.add('given');
+    if(selected[0]===r || selected[1]===c) cell.classList.add('rc');
+    if(v!==0 && currentValue!==0 && v===currentValue && !(selected[0]===r && selected[1]===c)) cell.classList.add('same');
+    if(selected[0]===r && selected[1]===c) cell.classList.add('sel');
+    if(v!==0 && v!==solution[r][c]) cell.classList.add('wrong');
 
+    // content
+    cell.textContent='';
+    if(v!==0){ cell.textContent=v; }
+    else{
+      var ng=document.createElement('div'); ng.className='notes';
+      for(var i=1;i<=9;i++){ var sp=document.createElement('div'); if(notes[r][c].has(i)) sp.textContent=i; ng.appendChild(sp); }
+      cell.appendChild(ng);
+    }
+    (function(rr,cc){ cell.onclick=function(){ selected=[rr,cc]; renderGrid(); }; })(r,c);
+  }
+}
+function renderPad(){
+  padEl.innerHTML='';
 
+  // Contar colocaciones CORRECTAS por número (coinciden con solution)
+  var correctCounts = new Array(10).fill(0);
+  for(var r=0;r<SIZE;r++){
+    for(var c=0;c<SIZE;c++){
+      var v = board[r][c];
+      if(v && v === solution[r][c]) correctCounts[v]++;
+    }
+  }
 
+  // Botones 1–9
+  for(var i=1;i<=9;i++){
+    var b=document.createElement('button');
+    b.textContent=i;
 
+    // Desactivar solo si ya hay 9 colocaciones correctas de ese número
+    if(correctCounts[i] >= 9){
+      b.disabled = true;
+      b.style.opacity = 0.4;
+      b.style.cursor = 'not-allowed';
+      b.title = 'Número completo (correcto)';
+    } else {
+      (function(n){ b.onclick=function(){inputNumber(n);}; })(i);
+    }
+    padEl.appendChild(b);
+  }
 
+  // Borrar
+  var erase=document.createElement('button');
+  erase.textContent='Borrar';
+  erase.className='ghost';
+  erase.onclick=function(){inputNumber(0);};
+  padEl.appendChild(erase);
 
+  // Notas ON/OFF
+  var toggle=document.createElement('button');
+  toggle.textContent=pencil?'Notas: ON':'Notas: OFF';
+  toggle.className='ghost';
+  toggle.onclick=function(){pencil=!pencil; renderPad();};
+  padEl.appendChild(toggle);
+}
+function renderCounter(){
+  counterEl.innerHTML=''; var counts=new Array(10).fill(0);
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]) counts[board[r][c]]++;
+  for(var i=1;i<=9;i++){ var d=document.createElement('div'); d.innerHTML=i+'<div class=\"mini\">'+counts[i]+'/9</div>'; counterEl.appendChild(d); }
+}
+function renderConflicts(){
+  var cells=[].slice.call(gridEl.children); var conflict=new Set();
+  for(var r=0;r<SIZE;r++){ var seen=new Map(); for(var c=0;c<SIZE;c++){ var v=board[r][c]; if(!v) continue; if(seen.has(v)){ conflict.add(r+'-'+c); conflict.add(r+'-'+seen.get(v)); } else seen.set(v,c); } }
+  for(var c=0;c<SIZE;c++){ var seen2=new Map(); for(var r=0;r<SIZE;r++){ var v2=board[r][c]; if(!v2) continue; if(seen2.has(v2)){ conflict.add(r+'-'+c); conflict.add(seen2.get(v2)+'-'+c); } else seen2.set(v2,r); } }
+  for(var br=0;br<SIZE;br+=3){ for(var bc=0;bc<SIZE;bc+=3){ var seen3=new Map();
+    for(var i=0;i<3;i++) for(var j=0;j<3;j++){ var rr=br+i, cc=bc+j, vv=board[rr][cc]; if(!vv) continue; var key=rr+'-'+cc;
+      if(seen3.has(vv)){ conflict.add(key); conflict.add(seen3.get(vv)); } else seen3.set(vv,key); } } }
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){ var idx=r*9+c, key=r+'-'+c, cell=cells[idx]; cell.classList.remove('conflict'); if(conflict.has(key)) cell.classList.add('conflict'); }
+}
+function inputNumber(n){
+  var r=selected[0], c=selected[1]; if(given[r][c]!==0) return;
+  if(pencil){ if(n===0){ notes[r][c].clear(); } else { if(board[r][c]!==0) board[r][c]=0; if(notes[r][c].has(n)) notes[r][c].delete(n); else notes[r][c].add(n); } }
+  else{ board[r][c]=n; notes[r][c].clear(); }
+  renderAll(); checkCompleted();
+}
+function hint(){ var empties=[]; for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]===0) empties.push([r,c]);
+  if(!empties.length) return; var k=Math.floor(Math.random()*empties.length); selected=empties[k]; inputNumber(solution[selected[0]][selected[1]]); }
+function checkCompleted(){ for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){ if(board[r][c]!==solution[r][c]) return; }
+  clearInterval(timerId); winTimeEl.textContent=timeEl.textContent; winEl.style.display='flex'; launchConfetti(); }
+function renderAll(){ renderGrid(); renderPad(); renderCounter(); renderTime(); }
+btnNew.onclick=startNew; btnPencil.onclick=function(){pencil=!pencil; btnPencil.textContent=pencil?'Notas ON':'Notas';}; btnCheck.onclick=function(){renderConflicts();}; btnHint.onclick=hint;
+playAgain.onclick=function(){ startNew(); };
 
+// confetti emoji
+function launchConfetti(){
+  confettiEl.innerHTML='';
+  var count=60;
+  for(var i=0;i<count;i++){
+    var s=document.createElement('div');
+    s.textContent=['🎉','✨','🎊','⭐','💥'][Math.floor(Math.random()*5)];
+    s.style.position='absolute';
+    s.style.left=Math.random()*100+'%';
+    s.style.top='-10%';
+    s.style.fontSize=(18+Math.random()*16)+'px';
+    s.style.opacity='0.9';
+    confettiEl.appendChild(s);
+    (function(el){
+      var x=(Math.random()*40-20);
+      var dur=2500+Math.random()*1500;
+      var start=performance.now();
+      function step(t){
+        var k=(t-start)/dur;
+        if(k>1){ el.remove(); return; }
+        el.style.transform='translate('+x*k+'px,'+(k*110)+'vh) rotate('+(k*360)+'deg)';
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    })(s);
+  }
+}
 
-
-
+// Inicializa
+startNew();
+</script>
 
 <script>
-// ===== VeruchiDoku — Persistencia con puzzle base (no depende de newGame) =====
+// ===== VeruchiDoku — Persistencia segura (sin auto "Nueva") =====
 (function(){
-  const SAVE_KEY = 'veruchidoku-save-v3';
-  const DEF_LEVEL = 'media';
-  let booting = true, queuedNewGameArgs = null, _newGame = null;
+  const SAVE_KEY = 'veruchidoku-save-v5'; // nueva clave para evitar conflictos previos
+  const READY_CHECK_MS = 300;
 
-  const clone9 = (m) => (m||[]).map(r => (r||[]).slice());
+  function clone9(m){ return (m||[]).map(r => (r||[]).slice()); }
 
   function capturePuzzleBase(){
     const base = Array(9).fill(null).map(()=>Array(9).fill(0));
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
+    for(let r=0;r<9;r++) for(let c=0;c<9;c++){
       const v = (window.board && window.board[r] && window.board[r][c]) || 0;
-      if (v) base[r][c] = v;
+      if(v) base[r][c] = v;
     }
     return base;
   }
-
   function extractMoves(current, base){
     const moves = [];
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
+    for(let r=0;r<9;r++) for(let c=0;c<9;c++){
       const v = (current && current[r] && current[r][c]) || 0;
-      if (base[r][c] === 0 && v) moves.push([r,c,v]);
+      if(base[r][c]===0 && v) moves.push([r,c,v]);
     }
     return moves;
   }
-
   function extractNotes(notes, base){
-    if (!notes) return null;
+    if(!notes) return null;
     const out = [];
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
-      if (base[r][c] === 0) {
+    for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+      if(base[r][c]===0){
         const n = notes[r] && notes[r][c];
-        if (n && n.length) out.push([r,c,[...n]]);
+        if(n && n.length) out.push([r,c,[...n]]);
       }
     }
     return out.length ? out : null;
   }
-
-  function applyPuzzleBase(base){
-    window.board = clone9(base);
-  }
-
+  function applyPuzzleBase(base){ window.board = clone9(base); }
   function applyMoves(moves, base){
-    if (!Array.isArray(moves)) return;
-    for (const [r,c,v] of moves){
-      if (base[r][c] === 0 && window.board && window.board[r]) window.board[r][c] = v;
+    if(!Array.isArray(moves))return;
+    for(const [r,c,v] of moves){
+      if(base[r][c]===0 && window.board && window.board[r]) window.board[r][c]=v;
     }
   }
-
   function applyNotes(notesArr, base){
-    if (!Array.isArray(notesArr)) return;
-    if (!window.notes) return;
-    for (const [r,c,vals] of notesArr){
-      if (base[r][c] === 0 && window.notes[r]) window.notes[r][c] = Array.isArray(vals) ? vals.slice(0) : [];
+    if(!Array.isArray(notesArr) || !window.notes)return;
+    for(const [r,c,vals] of notesArr){
+      if(base[r][c]===0 && window.notes[r]) window.notes[r][c]=Array.isArray(vals)?vals.slice(0):[];
     }
   }
 
-  function saveAll(){
+  function saveState(){
     try{
-      if (!window.board) return;
+      if(!window.board) return;
       const base = capturePuzzleBase();
-      const payload = {
-        puzzleBase: base,
+      const data = {
+        base,
         moves: extractMoves(window.board, base),
         notes: extractNotes(window.notes, base),
         pencil: !!window.pencil,
-        elapsed: (typeof window.seconds !== 'undefined') ? window.seconds : 0
+        elapsed: (typeof window.seconds!=='undefined') ? window.seconds : 0
       };
-      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
-    }catch(err){ console.warn('[VDK] saveAll error:', err); }
+      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    }catch(err){ console.warn('[VDK] saveState error', err); }
   }
 
-  function restoreAll(){
+  function restoreState(){
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
+    if(!raw) return false;
     try{
       const data = JSON.parse(raw);
-      if (!data || !data.puzzleBase) return false;
-      applyPuzzleBase(data.puzzleBase);
-      applyMoves(data.moves, data.puzzleBase);
-      applyNotes(data.notes, data.puzzleBase);
-      if (typeof window.seconds !== 'undefined') window.seconds = data.elapsed || 0;
-      window.pencil = !!data.pencil;
-      if (typeof window.render === 'function') window.render();
-      if (typeof window.renderPad === 'function') window.renderPad();
+      if(!data || !data.base) return false;
+      applyPuzzleBase(data.base);
+      applyMoves(data.moves, data.base);
+      applyNotes(data.notes, data.base);
+      if(typeof window.seconds!=='undefined') window.seconds=data.elapsed||0;
+      window.pencil=!!data.pencil;
+      if(typeof window.render==='function') window.render();
+      if(typeof window.renderPad==='function') window.renderPad();
+      console.log('[VDK] Restaurado (manual)');
       return true;
-    }catch(err){ console.warn('[VDK] restoreAll error:', err); return false; }
+    }catch(err){ console.warn('[VDK] restoreState error', err); return false; }
   }
 
-  function wrapNewGameOnce(){
-    if (typeof window.newGame !== 'function' || _newGame) return;
-    _newGame = window.newGame;
-    window.newGame = function(...args){
-      if (booting) { queuedNewGameArgs = args.length ? args : null; return; }
-      const r = _newGame.apply(this, args);
-      setTimeout(saveAll, 0);
-      return r;
-    };
+  // No auto newGame: solo restaurar cuando el juego esté listo. Si no hay guardado, no hacemos nada.
+  function isReady(){
+    return window.board && Array.isArray(window.board) && window.board.length===9 && typeof window.render==='function';
+  }
+  function waitReadyAndRestore(){
+    if(!isReady()){ setTimeout(waitReadyAndRestore, READY_CHECK_MS); return; }
+    restoreState(); // si no hay guardado, no hace nada (espera a que el usuario pulse "Nueva")
+    hookSaves();
   }
 
   function hookSaves(){
-    if (typeof window.inputNumber === 'function'){
+    if(typeof window.inputNumber==='function'){
       const orig = window.inputNumber;
       window.inputNumber = function(n){
         const r = orig.apply(this, arguments);
-        if ('requestIdleCallback' in window) requestIdleCallback(saveAll, {timeout:500});
-        else setTimeout(saveAll, 150);
+        // Guardar en diferido tras pintar
+        setTimeout(saveState, 150);
+        return r;
+      };
+    }
+    if(typeof window.newGame==='function'){
+      const origNG = window.newGame;
+      window.newGame = function(){
+        const r = origNG.apply(this, arguments);
+        // Guardar baseline después de crear puzzle
+        setTimeout(saveState, 400);
         return r;
       };
     }
   }
 
-  window.addEventListener('load', () => {
-    wrapNewGameOnce();
-    let restored = false;
-    try {
-      if (window.board) {
-        restored = restoreAll();
-        if (!restored && _newGame && !queuedNewGameArgs) queuedNewGameArgs = [DEF_LEVEL];
-      }
-    } catch (_) {}
-    booting = false;
-    if (!restored && _newGame) {
-      _newGame.apply(window, queuedNewGameArgs || [DEF_LEVEL]);
-      setTimeout(saveAll, 0);
-    }
-    hookSaves();
-  });
-
   window.clearSavedGame = function(){ localStorage.removeItem(SAVE_KEY); };
+  window.addEventListener('load', waitReadyAndRestore);
 })();
 </script>
 
