@@ -1,192 +1,444 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>VeruchiDoku</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#0ea5e9" />
+  <meta name="theme-color" content="#0ea5e9">
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;margin:0;background:#fff;color:#111}
-    header{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.75rem 1rem;position:sticky;top:0;background:#fff;border-bottom:1px solid #eee}
-    .primary{background:#0ea5e9;color:#fff;border:0;border-radius:.75rem;padding:.5rem .9rem;font-weight:600}
-    .levels button{margin-right:.4rem}
-    .actions button+button{margin-left:.4rem}
-    #app{padding:1rem}
+    :root{
+      --bg:#fafafa; --panel:#ffffff; --panelSO:#f3f4f6; --accent:#0ea5e9;
+      --text:#111827; --muted:#6b7280; --error:#dc2626; --ok:#059669;
+      --cell:#ffffff; --given:#eef7ff;
+      --thin:#dce5ef;             /* líneas internas finas */
+      --bold:#1e40af;             /* separadores 3x3 */
+      --rc-fill:rgba(56,189,248,.18); --same-fill:rgba(59,130,246,.18);
+      --shadow:0 8px 22px rgba(0,0,0,.08), inset 0 0 0 1px rgba(0,0,0,.05);
+    }
+    .dark{
+      --bg:#0b1220; --panel:#0f172a; --panelSO:#0a1426; --accent:#0ea5e9;
+      --text:#e5e7eb; --muted:#94a3b8; --error:#ef4444; --ok:#10b981;
+      --cell:#0e1a31; --given:#0f213c;
+      --thin:#0f2745; --bold:#38bdf8;
+      --rc-fill:rgba(14,61,120,.28); --same-fill:rgba(11,31,62,.7);
+      --shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.04);
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial;
+      color:var(--text); background:var(--bg); display:flex;flex-direction:column;gap:12px}
+    header,footer{padding:12px 16px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.2px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    select,button{appearance:none;border:none;outline:none;background:var(--panel);color:var(--text);
+      padding:10px 12px;border-radius:12px;font-weight:700;letter-spacing:.2px; box-shadow:var(--shadow)}
+    button:active{transform:scale(.98)} button.primary{background:var(--accent);color:#001421}
+    button.warn{background:#f59e0b;color:#1b1300} button.good{background:#059669;color:#00120e}
+    .iconbtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px}
+    .container{padding:0 12px 18px;display:grid;gap:12px}
+    .grid-wrap{display:flex;justify-content:center}
+    .grid{
+      display:grid;grid-template-columns:repeat(9,1fr);
+      gap:0; /* IMPORTANT: no gap; borders draw the grid */
+      padding:6px;border-radius:14px;background:var(--panelSO);box-shadow:var(--shadow);
+      width:min(94vw,540px);aspect-ratio:1/1;position:relative;overflow:hidden;
+    }
+    .cell{
+      position:relative;background:var(--cell);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:800;font-size:min(6vw,28px);
+      border-radius:0; color:var(--text);
+      user-select:none; -webkit-user-select:none; touch-action:manipulation;
+      transition:background .12s, outline-color .12s, color .12s, box-shadow .12s;
+      /* thin grid using top/left borders only */
+      border-top:1px solid var(--thin);
+      border-left:1px solid var(--thin);
+      z-index:1;
+    }
+    /* outer border */
+    .grid .cell.edge-top{border-top-color:transparent}
+    .grid .cell.edge-left{border-left-color:transparent}
+    .grid .cell.edge-right{border-right:1px solid var(--thin)}
+    .grid .cell.edge-bottom{border-bottom:1px solid var(--thin)}
+    /* strong 3x3 separators exactly after rows 3 & 6, cols 3 & 6 */
+    .grid .cell.sepR{border-right:3px solid var(--bold)}
+    .grid .cell.sepB{border-bottom:3px solid var(--bold)}
+    .cell.given{background:var(--given)}
+    .cell.sel{outline:3px solid var(--accent);z-index:2}
+    .cell.rc{box-shadow:inset 0 0 0 9999px var(--rc-fill)}
+    .cell.same{box-shadow:inset 0 0 0 9999px var(--same-fill)}
+    .cell.conflict{outline:3px solid var(--error)}
+    .cell.wrong{color:var(--error); text-shadow:0 0 8px rgba(239,68,68,.35)}
+    .cell .notes{position:absolute;inset:0;padding:6px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+      color:var(--muted);font-weight:700;font-size:min(3.2vw,14px);opacity:.95}
+    .pad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+    .pad button{height:52px;border-radius:12px;font-size:17px}
+    .stats{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--panel);padding:10px 12px;border-radius:14px;box-shadow:var(--shadow)}
+    .mini{font-size:12px;color:var(--muted)} .counter{display:grid;grid-template-columns:repeat(9,1fr);gap:6px}
+    .counter div{background:var(--panelSO);padding:6px;border-radius:10px;text-align:center;font-size:12px;box-shadow:var(--shadow)}
+    footer{opacity:.7;font-size:12px;text-align:center}
+    /* Win overlay */
+    .win{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:10}
+    .win .card{background:var(--panel);border-radius:18px;padding:24px;min-width:260px;text-align:center;box-shadow:var(--shadow)}
+    .win h2{margin:0 0 6px 0;font-size:24px}
+    .confetti{position:absolute;inset:0;overflow:hidden;pointer-events:none}
   </style>
+<style>
+
+/* ===== ULTRA COMPACT / NO-OVERFLOW (v13) ===== */
+html, body { max-width: 100%; overflow-x: hidden; }
+header, .container, footer { width: 100%; margin: 0 auto; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+.grid-wrap { width: 100%; overflow: hidden; }
+.grid { width: 100% !important; max-width: 100% !important; margin: 0 auto; }
+.pad, .counter { width: 100%; }
+.pad { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)) !important; gap: 8px; }
+.counter { display: grid; grid-template-columns: repeat(9, minmax(0,1fr)) !important; gap: 6px; }
+.pad button { width: 100%; min-width: 0; height: 44px; }
+select, button { max-width: 100%; min-width: 0; }
+.stats { flex-wrap: wrap; gap: 10px; }
+.row { flex-wrap: wrap; }
+/* Tipos algo más pequeños para evitar cortes */
+.cell { font-size: clamp(13px, 3.8vw, 21px) !important; }
+.cell .notes { font-size: clamp(9px, 2.4vw, 12px) !important; }
+/* Afinamos separadores y bordes */
+.grid .cell.sepR { border-right-width: 2px !important; }
+.grid .cell.sepB { border-bottom-width: 2px !important; }
+/* Reducimos padding del grid para ganar unos px */
+.grid { padding: 4px !important; }
+/* Pequeños ajustes en pantallas muy estrechas */
+@media (max-width: 380px){
+  .pad button { height: 40px; font-size: 15px; }
+  .iconbtn{ width: 36px; height: 36px; }
+  header, footer { padding-left: 8px; padding-right: 8px; }
+}
+
+</style>
+<style>
+
+/* === FONT SIZE ADJUSTMENT (v14) === */
+.cell { font-size: clamp(15px, 4.5vw, 26px) !important; }
+.cell .notes { font-size: clamp(10px, 2.8vw, 14px) !important; }
+
+</style>
+
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0ea5e9">
 </head>
 <body>
-  <header class="toolbar">
-    <div class="levels">
-      <button data-level="fácil">Fácil</button>
-      <button data-level="media">Media</button>
-      <button data-level="difícil">Difícil</button>
-      <button data-level="experto">Experto</button>
-    </div>
-    <div class="actions">
-      <button id="new" class="primary">Nueva</button>
-      <button id="installApp" class="primary" style="display:none">Instalar</button>
+  <header>
+    <h1>Sudoku</h1>
+    <div class="row">
+      <select id="difficulty">
+        <option value="easy">Fácil</option>
+        <option value="medium" selected>Media</option>
+        <option value="hard">Difícil</option>
+        <option value="expert">Experto</option>
+      </select>
+      <button id="new" class="primary">Nueva</button> <button id="installApp" class="primary" style="display:none">Instalar</button>
+      <button id="theme" class="iconbtn" aria-label="Cambiar tema">🌞</button>
     </div>
   </header>
 
-  <main id="app">
-    <!-- Coloca aquí tu tablero/HTML del juego existente -->
-  </main>
+  <div class="container">
+    <div class="stats">
+      <div><div class="mini">Tiempo</div><strong id="time" class="tabnums">00:00</strong></div>
+      <div class="row">
+        <button id="pencil" class="ghost">Notas</button>
+        <button id="check" class="warn">Comprobar</button>
+        <button id="hint" class="good">Pista</button>
+      </div>
+    </div>
 
-  <!-- Anti auto-new: no generar puzzle hasta que el usuario pulse "Nueva" -->
-  <script>
-  (function(){
-    const DEF_LEVEL = 'media';
-    let _origNewGame = null;
-    let allowNewGame = false;
-    let queuedAutoArgs = null;
+    <div class="grid-wrap">
+      <div id="grid" class="grid" aria-label="Tablero de sudoku"></div>
+    </div>
 
-    function hookNewGame(){
-      if (typeof window.newGame !== 'function' || _origNewGame) return;
-      _origNewGame = window.newGame;
-      window.newGame = function(...args){
-        if (!allowNewGame){
-          queuedAutoArgs = args.length ? args : [DEF_LEVEL];
-          console.log('[VDK] Bloqueado newGame() automático; espera al toque de "Nueva"');
-          return;
-        }
-        return _origNewGame.apply(this, args);
-      };
+    <div class="pad" id="numpad"></div>
+    <div class="counter" id="counter"></div>
+  </div>
+
+  <div class="win" id="win">
+    <div class="confetti" id="confetti"></div>
+    <div class="card">
+      <h2>🎉 ¡Completado!</h2>
+      <div class="mini">Tiempo: <b id="winTime">00:00</b></div>
+      <div style="height:10px"></div>
+      <button id="playAgain" class="primary">Jugar de nuevo</button>
+    </div>
+  </div>
+
+  <footer>Separadores 3×3 exactos (entre 3/4 y 6/7) • Líneas internas suaves • Celdas cuadradas.</footer>
+
+<script>
+// ===== Tema claro/oscuro (por defecto CLARO) con icono ☀️/🌙 =====
+(function(){
+  var btn = document.getElementById('theme');
+  var root = document.body;
+  var key = 'sudoku-theme-v8';
+  var saved = localStorage.getItem(key) || 'light';
+  function apply(mode){
+    if(mode==='dark'){ root.classList.add('dark'); btn.textContent='🌙'; }
+    else { root.classList.remove('dark'); btn.textContent='🌞'; }
+    localStorage.setItem(key, mode);
+  }
+  btn.addEventListener('click', function(){
+    var next = root.classList.contains('dark') ? 'light' : 'dark';
+    apply(next);
+  });
+  apply(saved);
+})();
+
+// ===== Utilidades Sudoku =====
+var SIZE=9, BOX=3;
+function clone(b){return b.map(function(r){return r.slice();});}
+function empty(){var r=[]; for(var i=0;i<SIZE;i++){ r.push(new Array(SIZE).fill(0)); } return r;}
+function shuffle(arr){var a=arr.slice(); for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t;} return a;}
+function isSafe(board,r,c,n){
+  for(var i=0;i<SIZE;i++){ if(board[r][i]===n||board[i][c]===n) return false; }
+  var br=Math.floor(r/BOX)*BOX, bc=Math.floor(c/BOX)*BOX;
+  for(var i=0;i<BOX;i++) for(var j=0;j<BOX;j++){ if(board[br+i][bc+j]===n) return false; }
+  return true;
+}
+function findEmpty(board){ for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]===0) return [r,c]; return null;}
+function solveBoard(board,count,cap){ if(count===void 0) count=false; if(cap===void 0) cap=2;
+  var b=clone(board), solutions=0;
+  function bt(){ var spot=findEmpty(b); if(!spot){solutions++; return true;}
+    var r=spot[0], c=spot[1];
+    var nums=shuffle([1,2,3,4,5,6,7,8,9]);
+    for(var k=0;k<nums.length;k++){var n=nums[k];
+      if(isSafe(b,r,c,n)){ b[r][c]=n; var res=bt(); if(!count&&res) return true; if(count&&solutions>=cap) return true; b[r][c]=0; }
+    } return false;
+  }
+  var ok=bt(); return {ok:ok,board:b,solutions:solutions};
+}
+function generateFull(){ var b=empty();
+  (function bt(){ var s=findEmpty(b); if(!s) return true;
+    var r=s[0], c=s[1];
+    var nums=shuffle([1,2,3,4,5,6,7,8,9]);
+    for(var k=0;k<nums.length;k++){var n=nums[k]; if(isSafe(b,r,c,n)){ b[r][c]=n; if(bt()) return true; b[r][c]=0; } }
+    return false;
+  })(); return b;
+}
+function countSolutions(board){ return solveBoard(board,true,2).solutions; }
+function makePuzzle(difficulty){
+  var table={easy:[40,46],medium:[33,39],hard:[26,32],expert:[22,25]};
+  var mm=table[difficulty]||[33,39]; var minC=mm[0], maxC=mm[1];
+  var solution=generateFull(); var puzzle=clone(solution);
+  var positions=shuffle(Array.from({length:81},(_,i)=>i));
+  var target=Math.floor(minC+Math.random()*(maxC-minC+1));
+  var removed=0;
+  for(var p=0;p<positions.length;p++){ var pos=positions[p], r=Math.floor(pos/9), c=pos%9;
+    var bk=puzzle[r][c]; if(bk===0) continue; puzzle[r][c]=0;
+    var sols=countSolutions(puzzle);
+    if(sols!==1){ puzzle[r][c]=bk; } else { removed++; var clues=81-removed; if(clues<=target) break; }
+  }
+  return {puzzle:puzzle,solution:solution};
+}
+
+// ===== Estado y UI =====
+var gridEl=document.getElementById('grid');
+var padEl=document.getElementById('numpad');
+var timeEl=document.getElementById('time');
+var counterEl=document.getElementById('counter');
+var diffEl=document.getElementById('difficulty');
+var btnNew=document.getElementById('new');
+var btnPencil=document.getElementById('pencil');
+var btnCheck=document.getElementById('check');
+var btnHint=document.getElementById('hint');
+var winEl=document.getElementById('win');
+var winTimeEl=document.getElementById('winTime');
+var playAgain=document.getElementById('playAgain');
+var confettiEl=document.getElementById('confetti');
+
+var given=empty(), board=empty(), solution=empty();
+var notes=Array.from({length:SIZE},function(){return Array.from({length:SIZE},function(){return new Set();});});
+var selected=[0,0]; var pencil=false; var timer=0, timerId=null;
+
+function ensureCells(){
+  if(gridEl.children.length===81) return;
+  for(var i=0;i<81;i++){
+    var d=document.createElement('div'); d.className='cell';
+    var r=Math.floor(i/9), c=i%9;
+    // mark edges for outer thin border completion
+    if(r===0) d.classList.add('edge-top');
+    if(c===0) d.classList.add('edge-left');
+    if(r===8) d.classList.add('edge-bottom');
+    if(c===8) d.classList.add('edge-right');
+    // strong 3x3 separators after row 3 & 6, col 3 & 6
+    if(c===2 || c===5) d.classList.add('sepR');
+    if(r===2 || r===5) d.classList.add('sepB');
+    gridEl.appendChild(d);
+  }
+}
+
+function startNew(){
+  var data=makePuzzle(diffEl.value); given=data.puzzle; board=clone(data.puzzle); solution=data.solution;
+  notes=Array.from({length:SIZE},function(){return Array.from({length:SIZE},function(){return new Set();});});
+  selected=[0,0]; timer=0; if(timerId) clearInterval(timerId);
+  timerId=setInterval(function(){timer++; renderTime();},1000);
+  winEl.style.display='none'; confettiEl.innerHTML='';
+  renderAll();
+}
+function renderTime(){ var m=('0'+Math.floor(timer/60)).slice(-2); var s=('0'+(timer%60)).slice(-2); timeEl.textContent=m+':'+s; }
+function renderGrid(){
+  ensureCells();
+  var cells=[].slice.call(gridEl.children);
+  var currentValue = board[selected[0]][selected[1]] || 0;
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+    var idx=r*9+c, cell=cells[idx];
+    cell.classList.remove('sel','rc','same','wrong','given');
+    var v=board[r][c];
+    if(given[r][c]!==0) cell.classList.add('given');
+    if(selected[0]===r || selected[1]===c) cell.classList.add('rc');
+    if(v!==0 && currentValue!==0 && v===currentValue && !(selected[0]===r && selected[1]===c)) cell.classList.add('same');
+    if(selected[0]===r && selected[1]===c) cell.classList.add('sel');
+    if(v!==0 && v!==solution[r][c]) cell.classList.add('wrong');
+
+    // content
+    cell.textContent='';
+    if(v!==0){ cell.textContent=v; }
+    else{
+      var ng=document.createElement('div'); ng.className='notes';
+      for(var i=1;i<=9;i++){ var sp=document.createElement('div'); if(notes[r][c].has(i)) sp.textContent=i; ng.appendChild(sp); }
+      cell.appendChild(ng);
     }
+    (function(rr,cc){ cell.onclick=function(){ selected=[rr,cc]; renderGrid(); }; })(r,c);
+  }
+}
+function renderPad(){
+  padEl.innerHTML='';
 
-    window.addEventListener('DOMContentLoaded', () => {
-      hookNewGame();
-      const btn = document.getElementById('new');
-      if (btn){
-        btn.addEventListener('click', () => {
-          allowNewGame = true;
-          const args = queuedAutoArgs || [DEF_LEVEL];
-          _origNewGame && _origNewGame.apply(window, args);
-          window.newGame = _origNewGame; // permitir llamadas siguientes
-        });
+  // Contar colocaciones CORRECTAS por número (coinciden con solution)
+  var correctCounts = new Array(10).fill(0);
+  for(var r=0;r<SIZE;r++){
+    for(var c=0;c<SIZE;c++){
+      var v = board[r][c];
+      if(v && v === solution[r][c]) correctCounts[v]++;
+    }
+  }
+
+  // Botones 1–9
+  for(var i=1;i<=9;i++){
+    var b=document.createElement('button');
+    b.textContent=i;
+
+    // Desactivar solo si ya hay 9 colocaciones correctas de ese número
+    if(correctCounts[i] >= 9){
+      b.disabled = true;
+      b.style.opacity = 0.4;
+      b.style.cursor = 'not-allowed';
+      b.title = 'Número completo (correcto)';
+    } else {
+      (function(n){ b.onclick=function(){inputNumber(n);}; })(i);
+    }
+    padEl.appendChild(b);
+  }
+
+  // Borrar
+  var erase=document.createElement('button');
+  erase.textContent='Borrar';
+  erase.className='ghost';
+  erase.onclick=function(){inputNumber(0);};
+  padEl.appendChild(erase);
+
+  // Notas ON/OFF
+  var toggle=document.createElement('button');
+  toggle.textContent=pencil?'Notas: ON':'Notas: OFF';
+  toggle.className='ghost';
+  toggle.onclick=function(){pencil=!pencil; renderPad();};
+  padEl.appendChild(toggle);
+}
+function renderCounter(){
+  counterEl.innerHTML=''; var counts=new Array(10).fill(0);
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]) counts[board[r][c]]++;
+  for(var i=1;i<=9;i++){ var d=document.createElement('div'); d.innerHTML=i+'<div class=\"mini\">'+counts[i]+'/9</div>'; counterEl.appendChild(d); }
+}
+function renderConflicts(){
+  var cells=[].slice.call(gridEl.children); var conflict=new Set();
+  for(var r=0;r<SIZE;r++){ var seen=new Map(); for(var c=0;c<SIZE;c++){ var v=board[r][c]; if(!v) continue; if(seen.has(v)){ conflict.add(r+'-'+c); conflict.add(r+'-'+seen.get(v)); } else seen.set(v,c); } }
+  for(var c=0;c<SIZE;c++){ var seen2=new Map(); for(var r=0;r<SIZE;r++){ var v2=board[r][c]; if(!v2) continue; if(seen2.has(v2)){ conflict.add(r+'-'+c); conflict.add(seen2.get(v2)+'-'+c); } else seen2.set(v2,r); } }
+  for(var br=0;br<SIZE;br+=3){ for(var bc=0;bc<SIZE;bc+=3){ var seen3=new Map();
+    for(var i=0;i<3;i++) for(var j=0;j<3;j++){ var rr=br+i, cc=bc+j, vv=board[rr][cc]; if(!vv) continue; var key=rr+'-'+cc;
+      if(seen3.has(vv)){ conflict.add(key); conflict.add(seen3.get(vv)); } else seen3.set(vv,key); } } }
+  for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){ var idx=r*9+c, key=r+'-'+c, cell=cells[idx]; cell.classList.remove('conflict'); if(conflict.has(key)) cell.classList.add('conflict'); }
+}
+function inputNumber(n){
+  var r=selected[0], c=selected[1]; if(given[r][c]!==0) return;
+  if(pencil){ if(n===0){ notes[r][c].clear(); } else { if(board[r][c]!==0) board[r][c]=0; if(notes[r][c].has(n)) notes[r][c].delete(n); else notes[r][c].add(n); } }
+  else{ board[r][c]=n; notes[r][c].clear(); }
+  renderAll(); checkCompleted();
+}
+function hint(){ var empties=[]; for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++) if(board[r][c]===0) empties.push([r,c]);
+  if(!empties.length) return; var k=Math.floor(Math.random()*empties.length); selected=empties[k]; inputNumber(solution[selected[0]][selected[1]]); }
+function checkCompleted(){ for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){ if(board[r][c]!==solution[r][c]) return; }
+  clearInterval(timerId); winTimeEl.textContent=timeEl.textContent; winEl.style.display='flex'; launchConfetti(); }
+function renderAll(){ renderGrid(); renderPad(); renderCounter(); renderTime(); }
+btnNew.onclick=startNew; btnPencil.onclick=function(){pencil=!pencil; btnPencil.textContent=pencil?'Notas ON':'Notas';}; btnCheck.onclick=function(){renderConflicts();}; btnHint.onclick=hint;
+playAgain.onclick=function(){ startNew(); };
+
+// confetti emoji
+function launchConfetti(){
+  confettiEl.innerHTML='';
+  var count=60;
+  for(var i=0;i<count;i++){
+    var s=document.createElement('div');
+    s.textContent=['🎉','✨','🎊','⭐','💥'][Math.floor(Math.random()*5)];
+    s.style.position='absolute';
+    s.style.left=Math.random()*100+'%';
+    s.style.top='-10%';
+    s.style.fontSize=(18+Math.random()*16)+'px';
+    s.style.opacity='0.9';
+    confettiEl.appendChild(s);
+    (function(el){
+      var x=(Math.random()*40-20);
+      var dur=2500+Math.random()*1500;
+      var start=performance.now();
+      function step(t){
+        var k=(t-start)/dur;
+        if(k>1){ el.remove(); return; }
+        el.style.transform='translate('+x*k+'px,'+(k*110)+'vh) rotate('+(k*360)+'deg)';
+        requestAnimationFrame(step);
       }
-    });
-  })();
-  </script>
+      requestAnimationFrame(step);
+    })(s);
+  }
+}
 
-  <!-- Persistencia segura (no toca dados, no auto "Nueva") -->
-  <script>
-  (function(){
-    const SAVE_KEY = 'veruchidoku-save-v5';
-    const clone9 = m => (m||[]).map(r => (r||[]).slice());
+// Inicializa
+startNew();
+</script>
 
-    function baseFromBoard(){
-      const base = Array(9).fill(null).map(()=>Array(9).fill(0));
-      if (!window.board) return base;
-      for (let r=0;r<9;r++) for (let c=0;c<9;c++){
-        const v = window.board[r]?.[c] || 0;
-        if (v) base[r][c] = v;
-      }
-      return base;
-    }
-    function extractMoves(current, base){
-      const moves = [];
-      if (!current) return moves;
-      for (let r=0;r<9;r++) for (let c=0;c<9;c++){
-        const v = current[r]?.[c] || 0;
-        if (base[r][c] === 0 && v) moves.push([r,c,v]);
-      }
-      return moves;
-    }
-    function applyBase(base){ window.board = clone9(base); }
-    function applyMoves(moves, base){
-      if (!Array.isArray(moves) || !window.board) return;
-      for (const [r,c,v] of moves) if (base[r][c]===0 && window.board[r]) window.board[r][c] = v;
-    }
+<script>
+// Register Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(() => console.log('[SW] registrado'))
+      .catch(err => console.error('[SW] error', err));
+  });
+}
+// Manual install via beforeinstallprompt
+let deferredPrompt = null;
+const btnInstall = document.getElementById('installApp');
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (btnInstall) btnInstall.style.display = 'inline-block';
+});
+btnInstall?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  btnInstall.disabled = true;
+  try {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log('[A2HS] outcome:', outcome);
+  } finally {
+    deferredPrompt = null;
+    btnInstall.style.display = 'none';
+    btnInstall.disabled = false;
+  }
+});
+</script>
 
-    function saveState(){
-      try{
-        if (!window.board) return;
-        const base = baseFromBoard();
-        const data = {
-          base,
-          moves: extractMoves(window.board, base),
-          pencil: !!window.pencil,
-          elapsed: typeof window.seconds === 'number' ? window.seconds : 0
-        };
-        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-      }catch(e){ console.warn('[VDK] save error', e); }
-    }
-    function restoreState(){
-      try{
-        const raw = localStorage.getItem(SAVE_KEY);
-        if (!raw) return false;
-        const data = JSON.parse(raw);
-        if (!data?.base) return false;
-        applyBase(data.base);
-        applyMoves(data.moves, data.base);
-        if (typeof window.seconds === 'number') window.seconds = data.elapsed || 0;
-        window.pencil = !!data.pencil;
-        if (typeof window.render === 'function') window.render();
-        if (typeof window.renderPad === 'function') window.renderPad();
-        console.log('[VDK] restaurado');
-        return true;
-      }catch(e){ console.warn('[VDK] restore error', e); return false; }
-    }
-
-    window.addEventListener('load', () => {
-      // Hook: guardar tras acciones reales
-      if (typeof window.inputNumber === 'function'){
-        const orig = window.inputNumber;
-        window.inputNumber = function(n){
-          const r = orig.apply(this, arguments);
-          setTimeout(saveState, 50);
-          return r;
-        };
-      }
-      if (typeof window.newGame === 'function'){
-        const origNG = window.newGame;
-        window.newGame = function(){
-          const r = origNG.apply(this, arguments);
-          setTimeout(saveState, 100);
-          return r;
-        };
-      }
-      // Restaurar si hay guardado (no crea puzzle si no hay)
-      setTimeout(restoreState, 0);
-    });
-
-    window.clearSavedGame = () => localStorage.removeItem(SAVE_KEY);
-  })();
-  </script>
-
-  <!-- PWA: registro SW + botón Instalar -->
-  <script>
-  (function(){
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
-          .then(r => console.log('[SW] registrado:', r.scope))
-          .catch(err => console.error('[SW] error:', err));
-      });
-    }
-    let deferredPrompt = null;
-    const btn = document.getElementById('installApp');
-    window.addEventListener('beforeinstallprompt', (e) => {
-      console.log('[A2HS] beforeinstallprompt');
-      e.preventDefault();
-      deferredPrompt = e;
-      if (btn) btn.style.display = 'inline-block';
-    });
-    btn?.addEventListener('click', async () => {
-      if (!deferredPrompt) return;
-      btn.disabled = true;
-      try {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        console.log('[A2HS] outcome:', outcome);
-      } finally {
-        deferredPrompt = null;
-        btn.style.display = 'none';
-        btn.disabled = false;
-      }
-    });
-  })();
-  </script>
 </body>
 </html>
